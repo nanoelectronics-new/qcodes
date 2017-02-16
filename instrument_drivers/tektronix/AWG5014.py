@@ -17,6 +17,8 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
+#let's if i github finds this hidden PENIS
+
 import numpy as np
 import struct
 from time import sleep, time, localtime
@@ -324,14 +326,14 @@ class Tektronix_AWG5014(VisaInstrument):
         # self.add_function('initialize_dc_waveforms')
 
         # # Setup filepaths
-        self.waveform_folder = "Waveforms"
-        self._rem_file_path = "Z:\\Waveforms\\"
+        self.waveform_folder = "Waveforms"      
+        self._rem_file_path = "Z:\\Waveforms\\"  #what filepath is this?
 
         # NOTE! this directory has to exist on the AWG!!
         self._setup_folder = setup_folder
 
         self.goto_root()
-        self.change_folder(self.waveform_folder)
+        self.change_folder(self.waveform_folder)  
 
         self.set('trigger_impedance', 50)
         if self.get('clock_freq') != 1e9:
@@ -444,6 +446,18 @@ class Tektronix_AWG5014(VisaInstrument):
             'INT' or 'EXT'
         '''
         return self.ask('AWGC:CLOC:SOUR?')
+
+    def set_sequence_mode_on(self):      #from qtlab driver, not really needed but for convenience
+        '''
+        Sets the sequence mode to 'On'
+
+        Input:
+            None
+
+        Output:
+            None
+        '''
+        self.runmode('SEQ') #I guess it should work like that
 
     def set_refclock_ext(self):
         '''
@@ -628,12 +642,80 @@ class Tektronix_AWG5014(VisaInstrument):
         '''
         pass
 
+    def load_seq_elem(self, elem, channel, waveform_name, TWAIT = 0, INF = 0,count = 0, GOTOind = None):    # ADDED FUNCTION from qtLab driver, loads one sequence element at a time
+       
+        '''
+        This command sets the waveform for the specified sequence element on the specified channel. Also parameters such as 
+        waiting for trigger (TWAIT), infinite loop (INF) and GOTO index (GOTOind) are set for this one element channel.
+       
+        
+        Input:
+            elem (int) : the element number of the waveform
+            channel (int) : AWG channel
+            waveform_name (str) : the waveform name in channel waveform memory
+            TWAIT (boolean) : determines to wait for trigger or not before elemen execution
+            INF (boolean) : determines to infinitely execute or not this element
+            GOTOind (int) : determines which element is next after execution of this one            
+            
+        Output:
+            None
+        '''
+        
+        self.write('*OPC?') #Wait until previous command is executed
+        
+        #Set the element in sequence
+        self.write('SEQUENCE:ELEMENT%d:WAVEFORM%d "%s"' %(elem,channel,waveform_name))
+        
+        #Wait for trigger on this element (ON/OFF)
+        if TWAIT: # If TWAIT is set - set wait for trigger on this element       # ADDED 21.03.2016  10:30
+            self.write('SEQUENCE:ELEMENT%d:TWAIT %d' %(elem,1))
+        
+        #Infinite loop of this element (ON/OFF)
+        self.write('SEQUENCE:ELEMENT%d:LOOP:INFINITE %d' %(elem, INF))
+
+        if INF == 0 and count > 0:
+            #Loop this element for "count" number of repetitions 
+            self.write('SEQUENCE:ELEMENT%d:LOOP:INFINITE %d' %(elem, count))
+
+        
+        if GOTOind is not None:  # If we want to specify GOTOind
+         
+        
+            #For the SEQuence:ELEMent[n]:GOTO:INDex command to take effect, the GOTO state must be set to ON        
+            self.write('SEQUENCE:ELEMENT%d:GOTO:STATE 1' %elem)
+            
+            #Index of next element for execution 
+            if GOTOind:  # If GOTOind is 1 - set GOTOind flag on this element       
+                self.write('SEQUENCE:ELEMENT%d:GOTO:INDEX %d' %(elem, 1))
+
     ##################################################################
 
     def import_waveform_file(self, waveform_listname, waveform_filename,
                              type='wfm'):
         return self.write('mmem:imp "%s","%s",%s' % (
             waveform_listname, waveform_filename, type))
+
+    def import_waveform_object(self, Wav = None, path = 'C:\SEQwav\\'):  # ADDED FUNCTION  from qtlab driver
+        
+        '''
+        This command imports a file from AWG hard drive memory into the AWG waveform list as a waveform.
+
+        Input:
+            Wav (Waveform type) :  Waveform object
+            path (string)          : Place on the AWG disk where waveform is located (e.g. 'C:\SEQwav\ ')
+
+        Output:
+            None
+        '''
+        
+        if Wav is None:
+            raise Exception('Error: You havent passed Waveform object to "import_waveform_object" function')
+     
+            
+        filename = path + Wav.waveform_name + '.wfm'  # Changed 
+        waveform_name = Wav.waveform_name            # Changed
+        self.write('*OPC?') #Wait until previous command is executed
+        self.write('MMEMORY:IMPORT "%s","%s", wfm' % (waveform_name, filename)) #here they do not include visa_handle in the command. will see if works
 
     def import_and_load_waveform_file_to_channel(self, channel_no,
                                                  waveform_listname,
@@ -919,6 +1001,66 @@ class Tektronix_AWG5014(VisaInstrument):
         mes = s1 + s2 + s3 + s4 + s5 + s6
 
         self.visa_handle.write_raw(mes)
+
+ def send_waveform_object(self,Wav = None, path = 'C:\SEQwav\\'):    # Added from the qtlab driver
+        
+        '''
+        Sends a complete waveform. All parameters need to be specified.
+
+        Input:
+            Wav (Waveform type) : Waveform object
+            path (string)          : Place on the AWG disk to save waveform (e.g. 'C:\SEQwav\ ')
+
+        Output:
+            None
+        '''
+        
+        if Wav is None:
+            raise Exception('Error: You havent passed Waveform object to "send_waveform_object" function')
+    
+            
+        w = Wav.waveform   #   Changed  
+        m1 = Wav.marker1   #   Changed
+        m2 = Wav.marker2   #   Changed name
+        filename = path + Wav.waveform_name + '.wfm'
+        clock = int(self.do_get_clock())   
+        
+        logging.debug(__name__ + ' : Sending waveform %s to instrument' % filename)
+        # Check for errors
+        dim = len(w)
+
+        if (not((len(w)==len(m1)) and ((len(m1)==len(m2))))):
+            return 'error'
+
+        self._values['files'][filename]={}
+        self._values['files'][filename]['w']=w
+        self._values['files'][filename]['m1']=m1
+        self._values['files'][filename]['m2']=m2
+        self._values['files'][filename]['clock']=clock
+        self._values['files'][filename]['numpoints']=len(w)
+        
+
+
+        m = m1 + numpy.multiply(m2,2)
+        ws = ''
+        for i in range(0,len(w)):
+            ws = ws + struct.pack('<fB', w[i], int(m[i]))
+
+        s1 = 'MMEM:DATA "%s",' % filename
+        s3 = 'MAGIC 1000\n'
+        s5 = ws
+        s6 = 'CLOCK %.10e\n' % clock
+        s4 = '#' + str(len(str(len(s5)))) + str(len(s5))
+        s4 = s4.encode('UTF-8')
+        lenlen=str(len(str(len(s6) + len(s5) + len(s4) + len(s3))))
+        s2 = '#' + lenlen + str(len(s6) + len(s5) + len(s4) + len(s3))
+        s2 = s2.encode('UTF-8')
+
+        mes = s1 + s2 + s3 + s4 + s5 + s6
+    
+        self._visa_handle.write('*OPC?') #Wait until previous command is executed
+        self._visa_handle.write_raw(mes)
+
 
     def _file_dict(self, w, m1, m2, clock):
         return {
